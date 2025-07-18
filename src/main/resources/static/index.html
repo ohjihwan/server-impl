@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게시판 서비스</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .btn { padding: 8px 16px; margin: 5px; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-secondary { background-color: #6c757d; color: white; }
+        .btn-danger { background-color: #dc3545; color: white; }
+        .form-group { margin-bottom: 15px; }
+        .form-control { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        .post-item { border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 4px; }
+        .pagination { text-align: center; margin-top: 20px; }
+        .hidden { display: none; }
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000; }
+        .modal-content { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 8px; width: 400px; max-width: 90%; }
+        textarea.form-control { resize: vertical; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>게시판 서비스</h1>
+            <div id="userInfo" class="hidden">
+                <span id="welcomeMsg"></span>
+                <button class="btn btn-secondary" onclick="showProfile()">내 정보</button>
+                <button class="btn btn-danger" onclick="logout()">로그아웃</button>
+            </div>
+            <div id="authButtons">
+                <button class="btn btn-primary" onclick="showLogin()">로그인</button>
+                <button class="btn btn-secondary" onclick="showRegister()">회원가입</button>
+            </div>
+        </div>
+
+        <div id="postSection">
+            <div class="header">
+                <h2>게시글 목록</h2>
+                <button id="writeBtn" class="btn btn-primary hidden" onclick="showWriteForm()">글쓰기</button>
+            </div>
+            <div id="postList"></div>
+            <div id="pagination" class="pagination"></div>
+        </div>
+
+        <!-- 로그인 모달 -->
+        <div id="loginModal" class="modal hidden">
+            <div class="modal-content">
+                <h3>로그인</h3>
+                <form id="loginForm">
+                    <div class="form-group">
+                        <input type="text" id="loginUsername" class="form-control" placeholder="사용자명" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="loginPassword" class="form-control" placeholder="비밀번호" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">로그인</button>
+                    <button type="button" class="btn btn-secondary" onclick="hideModal('loginModal')">취소</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 회원가입 모달 -->
+        <div id="registerModal" class="modal hidden">
+            <div class="modal-content">
+                <h3>회원가입</h3>
+                <form id="registerForm">
+                    <div class="form-group">
+                        <input type="text" id="regUsername" class="form-control" placeholder="사용자명" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="regPassword" class="form-control" placeholder="비밀번호" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="email" id="regEmail" class="form-control" placeholder="이메일" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="text" id="regName" class="form-control" placeholder="이름" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">가입하기</button>
+                    <button type="button" class="btn btn-secondary" onclick="hideModal('registerModal')">취소</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 글쓰기 모달 -->
+        <div id="writeModal" class="modal hidden">
+            <div class="modal-content">
+                <h3>게시글 작성</h3>
+                <form id="writeForm">
+                    <div class="form-group">
+                        <input type="text" id="postTitle" class="form-control" placeholder="제목" required>
+                    </div>
+                    <div class="form-group">
+                        <textarea id="postContent" class="form-control" rows="10" placeholder="내용" required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">작성하기</button>
+                    <button type="button" class="btn btn-secondary" onclick="hideModal('writeModal')">취소</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let currentPage = 1;
+
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            checkLoginStatus();
+            loadPosts(1);
+            
+            // 폼 이벤트 리스너
+            document.getElementById('loginForm').addEventListener('submit', handleLogin);
+            document.getElementById('registerForm').addEventListener('submit', handleRegister);
+            document.getElementById('writeForm').addEventListener('submit', handleWrite);
+        });
+
+        // 로그인 상태 확인
+        async function checkLoginStatus() {
+            try {
+                const response = await fetch('/api/users/me', {
+                    credentials: 'include'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentUser = data.user;
+                    updateUI(true);
+                } else {
+                    updateUI(false);
+                }
+            } catch (error) {
+                updateUI(false);
+            }
+        }
+
+        // UI 업데이트
+        function updateUI(isLoggedIn) {
+            const userInfo = document.getElementById('userInfo');
+            const authButtons = document.getElementById('authButtons');
+            const writeBtn = document.getElementById('writeBtn');
+            
+            if (isLoggedIn && currentUser) {
+                userInfo.classList.remove('hidden');
+                authButtons.classList.add('hidden');
+                writeBtn.classList.remove('hidden');
+                document.getElementById('welcomeMsg').textContent = `${currentUser.name}님 환영합니다!`;
+            } else {
+                userInfo.classList.add('hidden');
+                authButtons.classList.remove('hidden');
+                writeBtn.classList.add('hidden');
+            }
+        }
+
+        // 로그인 처리
+        async function handleLogin(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            try {
+                const response = await fetch('/api/users/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentUser = data.user;
+                    updateUI(true);
+                    hideModal('loginModal');
+                    alert('로그인 성공!');
+                    document.getElementById('loginForm').reset();
+                } else {
+                    alert(data.message);
+                }
+            } catch (error) {
+                alert('로그인 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 회원가입 처리
+        async function handleRegister(e) {
+            e.preventDefault();
+            
+            const userData = {
+                username: document.getElementById('regUsername').value,
+                password: document.getElementById('regPassword').value,
+                email: document.getElementById('regEmail').value,
+                name: document.getElementById('regName').value
+            };
+            
+            try {
+                const response = await fetch('/api/users/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(userData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    hideModal('registerModal');
+                    alert('회원가입이 완료되었습니다!');
+                    document.getElementById('registerForm').reset();
+                } else {
+                    alert(data.message);
+                }
+            } catch (error) {
+                alert('회원가입 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 로그아웃
+        async function logout() {
+            try {
+                await fetch('/api/users/logout', { 
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                currentUser = null;
+                updateUI(false);
+                alert('로그아웃되었습니다.');
+            } catch (error) {
+                alert('로그아웃 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 게시글 목록 로드
+        async function loadPosts(page) {
+            try {
+                const response = await fetch(`/api/posts?page=${page}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayPosts(data.data.posts);
+                    displayPagination(data.data);
+                    currentPage = page;
+                }
+            } catch (error) {
+                alert('게시글을 불러오는 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 게시글 표시
+        function displayPosts(posts) {
+            const postList = document.getElementById('postList');
+            postList.innerHTML = '';
+            
+            if (posts.length === 0) {
+                postList.innerHTML = '<p>게시글이 없습니다.</p>';
+                return;
+            }
+            
+            posts.forEach(post => {
+                const postDiv = document.createElement('div');
+                postDiv.className = 'post-item';
+                postDiv.innerHTML = `
+                    <h4>${post.title}</h4>
+                    <p>작성자: ${post.authorName} | 작성일: ${new Date(post.createdAt).toLocaleDateString()}</p>
+                    <p>${post.content.substring(0, 100)}${post.content.length > 100 ? '...' : ''}</p>
+                    <button class="btn btn-primary" onclick="viewPost(${post.id})">자세히 보기</button>
+                `;
+                postList.appendChild(postDiv);
+            });
+        }
+
+        // 페이지네이션 표시
+        function displayPagination(data) {
+            const pagination = document.getElementById('pagination');
+            pagination.innerHTML = '';
+            
+            for (let i = 1; i <= data.totalPages; i++) {
+                const btn = document.createElement('button');
+                btn.className = `btn ${i === data.currentPage ? 'btn-primary' : 'btn-secondary'}`;
+                btn.textContent = i;
+                btn.onclick = () => loadPosts(i);
+                pagination.appendChild(btn);
+            }
+        }
+
+        // 게시글 작성
+        async function handleWrite(e) {
+            e.preventDefault();
+            
+            const postData = {
+                title: document.getElementById('postTitle').value,
+                content: document.getElementById('postContent').value
+            };
+            
+            try {
+                const response = await fetch('/api/posts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(postData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    hideModal('writeModal');
+                    loadPosts(1);
+                    alert('게시글이 작성되었습니다!');
+                    document.getElementById('writeForm').reset();
+                } else {
+                    alert(data.message);
+                }
+            } catch (error) {
+                alert('게시글 작성 중 오류가 발생했습니다.');
+            }
+        }
+
+        // 모달 표시/숨김
+        function showLogin() { showModal('loginModal'); }
+        function showRegister() { showModal('registerModal'); }
+        function showWriteForm() { showModal('writeModal'); }
+        function showProfile() { alert('프로필 기능은 추후 구현 예정입니다.'); }
+
+        function showModal(modalId) {
+            document.getElementById(modalId).classList.remove('hidden');
+        }
+
+        function hideModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+        }
+
+        function viewPost(postId) {
+            alert(`게시글 상세보기 기능은 추후 구현 예정입니다. (Post ID: ${postId})`);
+        }
+    </script>
+</body>
+</html>
