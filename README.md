@@ -6,7 +6,7 @@ Spring Boot + MyBatis + MySQL 기반의 게시판 REST API 서버입니다.
 ---
 
 ## 📁 프로젝트 구조
-
+```
 server-impl/
 ├── src/
 │ ├── main/
@@ -22,7 +22,7 @@ server-impl/
 │ │ ├── mapper/*.xml # MyBatis 매퍼 XML
 │ │ └── static/, templates/ # (해당 없음 또는 선택)
 └── pom.xml
-
+```
 
 ---
 
